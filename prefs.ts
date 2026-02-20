@@ -1,4 +1,4 @@
-/* prefs.js
+/* prefs.ts
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -7,16 +7,22 @@ import Adw from "gi://Adw";
 import Gtk from "gi://Gtk";
 import Gio from "gi://Gio";
 
-import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js";
+import {
+  ExtensionPreferences,
+  gettext as _,
+} from "resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js";
 
 export default class CopilotUsagePreferences extends ExtensionPreferences {
-  fillPreferencesWindow(window) {
-    const settings = this.getSettings();
+  private _settings?: Gio.Settings;
+
+  override fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
+    this._settings = this.getSettings();
+    const settings = this._settings;
 
     window.set_default_size(620, 540);
 
     const page = new Adw.PreferencesPage({
-      title: "Copilot Usage",
+      title: _("Copilot Usage"),
       icon_name: "preferences-system-symbolic",
     });
     window.add(page);
@@ -24,14 +30,15 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
     // ── Token group ──────────────────────────────────────────────────
 
     const tokenGroup = new Adw.PreferencesGroup({
-      title: "GitHub Token",
-      description:
+      title: _("GitHub Token"),
+      description: _(
         "Required to fetch your Copilot monthly usage from the GitHub API.",
+      ),
     });
     page.add(tokenGroup);
 
     const tokenRow = new Adw.PasswordEntryRow({
-      title: "GitHub OAuth Token",
+      title: _("GitHub OAuth Token"),
       show_apply_button: true,
     });
     tokenRow.set_text(settings.get_string("github-token"));
@@ -43,14 +50,14 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
     // ── How-to group ─────────────────────────────────────────────────
 
     const howtoGroup = new Adw.PreferencesGroup({
-      title: "How to get your token",
+      title: _("How to get your token"),
     });
     page.add(howtoGroup);
 
     // Option A – GitHub CLI
     const cliRow = new Adw.ActionRow({
-      title: "Option A — GitHub CLI (recommended)",
-      subtitle: "Run these two commands in a terminal:",
+      title: _("Option A — GitHub CLI (recommended)"),
+      subtitle: _("Run these two commands in a terminal:"),
     });
     howtoGroup.add(cliRow);
 
@@ -87,13 +94,14 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
 
     // Option B – Personal Access Token
     const patRow = new Adw.ActionRow({
-      title: "Option B — Personal Access Token",
-      subtitle:
+      title: _("Option B — Personal Access Token"),
+      subtitle: _(
         "Create a classic token at github.com/settings/tokens with the read:user scope.",
+      ),
     });
 
     const openPatButton = new Gtk.Button({
-      label: "Open GitHub Token Settings",
+      label: _("Open GitHub Token Settings"),
       valign: Gtk.Align.CENTER,
       css_classes: ["suggested-action"],
     });
@@ -110,17 +118,19 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
     // ── Auto-discovery note ──────────────────────────────────────────
 
     const discoveryGroup = new Adw.PreferencesGroup({
-      title: "Automatic Token Discovery",
+      title: _("Automatic Token Discovery"),
       description:
-        "If a token is found automatically, you do not need to enter one above. " +
-        "The extension checks these locations on startup:",
+        _(
+          "If a token is found automatically, you do not need to enter one above. " +
+            "The extension checks these locations on startup:",
+        ),
     });
     page.add(discoveryGroup);
 
-    const paths = [
-      ["GitHub CLI", "~/.config/gh/hosts.yml"],
-      ["Copilot CLI / Neovim / Vim", "~/.config/github-copilot/hosts.json"],
-      ["Copilot apps config", "~/.config/github-copilot/apps.json"],
+    const paths: [string, string][] = [
+      [_("GitHub CLI"), "~/.config/gh/hosts.yml"],
+      [_("Copilot CLI / Neovim / Vim"), "~/.config/github-copilot/hosts.json"],
+      [_("Copilot apps config"), "~/.config/github-copilot/apps.json"],
     ];
 
     for (const [source, path] of paths) {
@@ -136,12 +146,12 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
 
     // ── Refresh interval ─────────────────────────────────────────────
 
-    const refreshGroup = new Adw.PreferencesGroup({ title: "General" });
+    const refreshGroup = new Adw.PreferencesGroup({ title: _("General") });
     page.add(refreshGroup);
 
     const refreshRow = new Adw.SpinRow({
-      title: "Auto-refresh Interval",
-      subtitle: "How often to refresh usage data (seconds). 0 = never.",
+      title: _("Auto-refresh Interval"),
+      subtitle: _("How often to refresh usage data (seconds). 0 = never."),
       adjustment: new Gtk.Adjustment({
         lower: 0,
         upper: 3600,
@@ -157,10 +167,12 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
       Gio.SettingsBindFlags.DEFAULT,
     );
     refreshGroup.add(refreshRow);
+
+    return Promise.resolve();
   }
 
-  /** Wraps an arbitrary widget in a non-interactive ActionRow. */
-  _wrapInRow(widget) {
+  /** Wraps an arbitrary widget in a non-interactive PreferencesRow. */
+  private _wrapInRow(widget: Gtk.Widget): Adw.PreferencesRow {
     const row = new Adw.PreferencesRow({
       activatable: false,
       focusable: false,

@@ -23,9 +23,18 @@ importers:
       '@girs/gnome-shell':
         specifier: ^49.1.0
         version: 49.1.0
+      '@girs/gobject-2.0':
+        specifier: 2.86.0-4.0.0-beta.38
+        version: 2.86.0-4.0.0-beta.38
+      '@girs/soup-3.0':
+        specifier: 3.6.5-4.0.0-beta.38
+        version: 3.6.5-4.0.0-beta.38
       '@girs/st-14':
         specifier: 14.0.0-4.0.0-beta.38
         version: 14.0.0-4.0.0-beta.38
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
 packages:
 
@@ -164,6 +173,9 @@ packages:
   '@girs/shew-0@0.0.0-4.0.0-beta.38':
     resolution: {integrity: sha512-tNnIRXseBBrVXk2v5t5MkSM23sAcNvnUMrLLEJYyjn2iTmspImvIT/0s8obPkJk2rK+TwP3nlgPjJILkUDWnaw==}
 
+  '@girs/soup-3.0@3.6.5-4.0.0-beta.38':
+    resolution: {integrity: sha512-/QqlVTglVEu/2kgbSfs1/mKO0I592TmiJ2BjE/L651YL6PwASaN6sGYptf6mFFfGBhhd/o5+5wYRIshn9usyBA==}
+
   '@girs/st-14@14.0.0-4.0.0-beta.38':
     resolution: {integrity: sha512-hrZoEt/lxXGZJGICFOPQJ4J9w7BFirQK5PSolZXbkC2z15SH/q+DEPJbFIdD3x24yJ/em05iqbqBteT+NqOJkA==}
 
@@ -178,6 +190,11 @@ packages:
 
   '@girs/xlib-2.0@2.0.0-4.0.0-beta.38':
     resolution: {integrity: sha512-PK3s6NowmlY65E/Y9BqwR1lVKsZSWQJm/za1I47SvL1IVWcEHYWRZdDtYZjfmbUlUqqKkfoMt+bUCmhmQk/eYQ==}
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
 
 snapshots:
 
@@ -692,6 +709,14 @@ snapshots:
       '@girs/pango-1.0': 1.57.0-4.0.0-beta.38
       '@girs/pangocairo-1.0': 1.0.0-4.0.0-beta.38
 
+  '@girs/soup-3.0@3.6.5-4.0.0-beta.38':
+    dependencies:
+      '@girs/gio-2.0': 2.86.0-4.0.0-beta.38
+      '@girs/gjs': 4.0.0-beta.38
+      '@girs/glib-2.0': 2.86.0-4.0.0-beta.38
+      '@girs/gmodule-2.0': 2.0.0-4.0.0-beta.38
+      '@girs/gobject-2.0': 2.86.0-4.0.0-beta.38
+
   '@girs/st-14@14.0.0-4.0.0-beta.38':
     dependencies:
       '@girs/atk-1.0': 2.58.0-4.0.0-beta.38
@@ -758,3 +783,5 @@ snapshots:
     dependencies:
       '@girs/gjs': 4.0.0-beta.38
       '@girs/gobject-2.0': 2.86.0-4.0.0-beta.38
+
+  typescript@5.9.3: {}
