@@ -1,0 +1,118 @@
+/* Copilot Usage Extension Stylesheet */
+
+/* ── Panel label ──────────────────────────────────────────────────── */
+
+.copilot-panel-label {
+    margin-left: 4px;
+    font-size: 11px;
+}
+
+/* ── Popup menu sections ──────────────────────────────────────────── */
+
+.copilot-usage-section {
+    min-width: 240px;
+    padding: 2px 4px;
+    spacing: 6px;
+}
+
+/* ── Plan row ─────────────────────────────────────────────────────── */
+
+.copilot-plan-box {
+    min-width: 240px;
+    padding: 2px 4px;
+    spacing: 8px;
+}
+
+.copilot-plan-icon {
+    opacity: 0.7;
+}
+
+.copilot-plan-label {
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+/* ── Usage rows ───────────────────────────────────────────────────── */
+
+.copilot-section-title {
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.copilot-percent-label {
+    font-size: 12px;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────── */
+
+.copilot-progress-bg {
+    height: 6px;
+    min-width: 240px;
+    margin-top: 6px;
+    margin-bottom: 2px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.copilot-progress-bar {
+    height: 6px;
+    border-radius: 3px;
+}
+
+/* Usage level colours */
+
+.copilot-progress-bar.usage-low {
+    background-color: #3fb950; /* green */
+}
+
+.copilot-progress-bar.usage-medium {
+    background-color: #d29922; /* yellow */
+}
+
+.copilot-progress-bar.usage-high {
+    background-color: #f0883e; /* orange */
+}
+
+.copilot-progress-bar.usage-critical {
+    background-color: #f85149; /* red */
+}
+
+/* ── Footer ───────────────────────────────────────────────────────── */
+
+.copilot-updated-label {
+    font-size: 10px;
+    opacity: 0.55;
+}
+
+/* ── Setup state ──────────────────────────────────────────────────── */
+
+.copilot-setup-box {
+    min-width: 260px;
+    padding: 8px 4px 4px 4px;
+    spacing: 8px;
+}
+
+.copilot-setup-icon-row {
+    /* centre the icon horizontally */
+    x-align: center;
+}
+
+.copilot-setup-icon {
+    icon-size: 32px;
+    opacity: 0.6;
+    /* centre within the row */
+    x-expand: true;
+}
+
+.copilot-setup-heading {
+    font-size: 13px;
+    font-weight: bold;
+    text-align: center;
+}
+
+.copilot-setup-body {
+    font-size: 11px;
+    opacity: 0.7;
+    text-align: center;
+    /* allow wrapping – controlled in JS via clutter_text */
+}

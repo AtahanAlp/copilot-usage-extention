@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.copilot-usage"
+          path="/org/gnome/shell/extensions/copilot-usage/">
+
+    <key name="github-token" type="s">
+      <default>''</default>
+      <summary>GitHub OAuth Token</summary>
+      <description>
+        A GitHub OAuth token used to fetch Copilot usage data from the
+        GitHub API. Can be obtained via the GitHub CLI ('gh auth token')
+        or by creating a Personal Access Token at github.com/settings/tokens.
+      </description>
+    </key>
+
+    <key name="refresh-interval" type="i">
+      <default>300</default>
+      <range min="30" max="3600"/>
+      <summary>Refresh Interval (seconds)</summary>
+      <description>
+        How often the extension automatically refreshes usage data, in seconds.
+      </description>
+    </key>
+
+  </schema>
+</schemalist>

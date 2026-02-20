@@ -1,0 +1,7 @@
+{
+  "name": "Copilot Usage Monitor",
+  "description": "A lightweight indicator showing your GitHub Copilot monthly usage limits.",
+  "uuid": "copilot-usage@atahan.github.com",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "settings-schema": "org.gnome.shell.extensions.copilot-usage"
+}
