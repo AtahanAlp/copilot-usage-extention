@@ -414,16 +414,57 @@ const CopilotUsageIndicator = GObject.registerClass(
     // ── Display helpers ───────────────────────────────────────────────
 
     _updateUsageDisplay(data) {
+      // Log the raw response so it can be inspected with:
+      //   journalctl /usr/bin/gnome-shell -f | grep "Copilot Usage"
+      console.log("Copilot Usage: raw API response →", JSON.stringify(data));
+
+      // The GitHub API uses snake_case; the CodexBar Swift docs use camelCase
+      // property names internally but the wire format is snake_case.
+      // We support both just in case.
+      const plan = data.copilot_plan ?? data.copilotPlan ?? null;
+
+      const snapshots = data.quota_snapshots ?? data.quotaSnapshots ?? null;
+
+      const premium =
+        snapshots?.premium_interactions ??
+        snapshots?.premiumInteractions ??
+        null;
+
+      const chat = snapshots?.chat ?? null;
+
+      // If the API returned 200 but has no quota data at all the token likely
+      // lacks Copilot permissions – treat it the same as "not configured".
+      if (!plan && !premium && !chat) {
+        console.warn(
+          "Copilot Usage: response has no plan/quota fields.",
+          "Token may lack Copilot permissions.",
+          "Full response:",
+          JSON.stringify(data),
+        );
+        this._showSetupState(
+          "Copilot data unavailable",
+          "The API returned a response but no usage data was found.\n\n" +
+            "Your token may not have Copilot permissions.\n" +
+            "Try: gh auth refresh -s read:user\nor add a fresh token in Settings.",
+        );
+        return;
+      }
+
       this._setMenuState("usage");
 
       // Plan
-      const plan = data.copilotPlan ?? "unknown";
-      this._planLabel.set_text(`Plan: ${this._formatPlan(plan)}`);
+      this._planLabel.set_text(
+        `Plan: ${plan ? this._formatPlan(plan) : "Unknown"}`,
+      );
+
+      // Helper: read percent_remaining (snake or camel)
+      const pctRemaining = (snap) =>
+        snap?.percent_remaining ?? snap?.percentRemaining ?? null;
 
       // Premium Interactions
-      const premium = data.quotaSnapshots?.premiumInteractions;
-      if (premium != null) {
-        const used = 100 - (premium.percentRemaining ?? 100);
+      const premR = pctRemaining(premium);
+      if (premR !== null) {
+        const used = 100 - premR;
         this._premiumPercent.set_text(`${used.toFixed(1)} % used`);
         this._updateBar(this._premiumProgressBar, used);
       } else {
@@ -432,9 +473,9 @@ const CopilotUsageIndicator = GObject.registerClass(
       }
 
       // Chat
-      const chat = data.quotaSnapshots?.chat;
-      if (chat != null) {
-        const used = 100 - (chat.percentRemaining ?? 100);
+      const chatR = pctRemaining(chat);
+      if (chatR !== null) {
+        const used = 100 - chatR;
         this._chatPercent.set_text(`${used.toFixed(1)} % used`);
         this._updateBar(this._chatProgressBar, used);
       } else {
@@ -442,14 +483,11 @@ const CopilotUsageIndicator = GObject.registerClass(
         this._updateBar(this._chatProgressBar, 0);
       }
 
-      // Panel label
-      const premiumUsed =
-        premium != null ? 100 - (premium.percentRemaining ?? 100) : null;
-      const chatUsed =
-        chat != null ? 100 - (chat.percentRemaining ?? 100) : null;
-      const primary = premiumUsed ?? chatUsed;
+      // Panel label – prefer premium, fall back to chat
+      const primaryUsed =
+        premR !== null ? 100 - premR : chatR !== null ? 100 - chatR : null;
       this._panelLabel.set_text(
-        primary != null ? `${Math.round(primary)} %` : "Copilot",
+        primaryUsed !== null ? `${Math.round(primaryUsed)} %` : "Copilot",
       );
 
       // Timestamp

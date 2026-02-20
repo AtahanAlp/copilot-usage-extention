@@ -74,7 +74,8 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
     }
 
     const cliInstallLabel = new Gtk.Label({
-      label: 'Install GitHub CLI from: <a href="https://cli.github.com">cli.github.com</a>',
+      label:
+        'Install GitHub CLI from: <a href="https://cli.github.com">cli.github.com</a>',
       use_markup: true,
       xalign: 0,
       margin_top: 4,
@@ -82,9 +83,7 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
     });
     cliBox.append(cliInstallLabel);
 
-    howtoGroup.add(
-      this._wrapInRow(cliBox),
-    );
+    howtoGroup.add(this._wrapInRow(cliBox));
 
     // Option B – Personal Access Token
     const patRow = new Adw.ActionRow({
@@ -162,7 +161,10 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
 
   /** Wraps an arbitrary widget in a non-interactive ActionRow. */
   _wrapInRow(widget) {
-    const row = new Adw.PreferencesRow({ activatable: false, focusable: false });
+    const row = new Adw.PreferencesRow({
+      activatable: false,
+      focusable: false,
+    });
     row.set_child(widget);
     return row;
   }
