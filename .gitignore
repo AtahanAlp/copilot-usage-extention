@@ -3,3 +3,14 @@ dist/
 package-lock.json
 *.zip
 schemas/gschemas.compiled
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
