@@ -78,7 +78,32 @@ function readToken_appsJson(content: unknown): string | null {
   return null;
 }
 
-/** GitHub CLI stores tokens in a simple YAML – parse with a regex. */
+/**
+ * VS Code / newer Copilot extensions store tokens in oauth.json.
+ * Structure: { "https://github.com/login/oauth": [{ "accessToken": "..." }] }
+ */
+function readToken_oauthJson(content: unknown): string | null {
+  const data = content as Record<
+    string,
+    Array<{ accessToken?: string }> | undefined
+  > | null;
+  if (data == null) return null;
+  for (const key of Object.keys(data)) {
+    const entries = data[key];
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (entry?.accessToken) return entry.accessToken;
+    }
+  }
+  return null;
+}
+
+/**
+ * GitHub CLI stores tokens in a simple YAML – parse with a regex.
+ * NOTE: newer gh versions store the token in the system keyring and omit
+ * oauth_token from hosts.yml entirely. This parser handles the legacy case;
+ * the preferred path is the `gh auth token` subprocess call.
+ */
 function readToken_ghYml(content: unknown): string | null {
   const match = (content as string).match(/oauth_token:\s*(\S+)/);
   return match ? match[1] : null;
@@ -90,40 +115,50 @@ function readToken_ghYml(content: unknown): string | null {
 
 const CopilotUsageIndicator = GObject.registerClass(
   class CopilotUsageIndicator extends PanelMenu.Button {
-    private _settings!: Gio.Settings;
-    private _openPreferences!: () => void;
-    private _session!: Soup.Session;
+    // ── Field declarations ────────────────────────────────────────────
+    // IMPORTANT: Use `declare` (not `field!: Type`) for all fields that are
+    // assigned in _init().  In GJS with GObject.registerClass, class-field
+    // initialisers run *after* _init() returns.  A bare `field;` declaration
+    // (what `field!: Type` compiles to) resets the field to `undefined` at
+    // that point, wiping every value _init() wrote.  `declare` is type-only
+    // and emits no JavaScript, so it never interferes with _init().
+    declare private _settings: Gio.Settings;
+    declare private _openPreferences: () => void;
+    declare private _session: Soup.Session;
     private _menuState: string | null = null;
     private _timerId: number | null = null;
     private _settingsChangedId: number | null = null;
+    // Becomes `false` via the class-field initialiser (runs after _init, which
+    // is fine because _init never sets _destroyed).
+    private _destroyed = false;
 
     // Panel widget
-    private _panelLabel!: St.Label;
+    declare private _panelLabel: St.Label;
 
     // Setup state items
-    private _setupItem!: PopupMenu.PopupBaseMenuItem;
-    private _setupSep!: PopupMenu.PopupSeparatorMenuItem;
-    private _openSettingsItem!: PopupMenu.PopupMenuItem;
-    private _setupHeading!: St.Label;
-    private _setupBody!: St.Label;
+    declare private _setupItem: PopupMenu.PopupBaseMenuItem;
+    declare private _setupSep: PopupMenu.PopupSeparatorMenuItem;
+    declare private _openSettingsItem: PopupMenu.PopupMenuItem;
+    declare private _setupHeading: St.Label;
+    declare private _setupBody: St.Label;
 
     // Usage state items
-    private _planItem!: PopupMenu.PopupBaseMenuItem;
-    private _planLabel!: St.Label;
-    private _usageSep1!: PopupMenu.PopupSeparatorMenuItem;
-    private _usageSep2!: PopupMenu.PopupSeparatorMenuItem;
-    private _usageSep3!: PopupMenu.PopupSeparatorMenuItem;
-    private _premiumProgressBar!: St.Widget;
-    private _premiumPercent!: St.Label;
-    private _premiumPercentItem!: PopupMenu.PopupBaseMenuItem;
-    private _chatProgressBar!: St.Widget;
-    private _chatPercent!: St.Label;
-    private _chatPercentItem!: PopupMenu.PopupBaseMenuItem;
-    private _footerItem!: PopupMenu.PopupBaseMenuItem;
-    private _updatedLabel!: St.Label;
+    declare private _planItem: PopupMenu.PopupBaseMenuItem;
+    declare private _planLabel: St.Label;
+    declare private _usageSep1: PopupMenu.PopupSeparatorMenuItem;
+    declare private _usageSep2: PopupMenu.PopupSeparatorMenuItem;
+    declare private _usageSep3: PopupMenu.PopupSeparatorMenuItem;
+    declare private _premiumProgressBar: St.Widget;
+    declare private _premiumPercent: St.Label;
+    declare private _premiumPercentItem: PopupMenu.PopupBaseMenuItem;
+    declare private _chatProgressBar: St.Widget;
+    declare private _chatPercent: St.Label;
+    declare private _chatPercentItem: PopupMenu.PopupBaseMenuItem;
+    declare private _footerItem: PopupMenu.PopupBaseMenuItem;
+    declare private _updatedLabel: St.Label;
 
     // Shared
-    private _sharedSep!: PopupMenu.PopupSeparatorMenuItem;
+    declare private _sharedSep: PopupMenu.PopupSeparatorMenuItem;
 
     // Convenience accessor that narrows the menu union to PopupMenu.PopupMenu
     private get _popupMenu(): PopupMenu.PopupMenu {
@@ -378,17 +413,28 @@ const CopilotUsageIndicator = GObject.registerClass(
     private async _resolveToken(): Promise<void> {
       const home = GLib.get_home_dir();
 
-      // 1) GitHub CLI  ~/.config/gh/hosts.yml
+      // 1) GitHub CLI via subprocess – works even when gh stores the token in
+      //    the system keyring (newer gh versions no longer write oauth_token to
+      //    hosts.yml, so the file-based YAML parser below is a legacy fallback).
+      {
+        const token = await this._runSubprocessToken("gh", ["auth", "token"]);
+        if (this._destroyed) return;
+        if (token) return this._fetchUsage(token);
+      }
+
+      // 2) GitHub CLI hosts.yml (legacy – older gh versions that wrote the
+      //    token directly to the file)
       {
         const token = await this._readFileToken(
           GLib.build_filenamev([home, ".config", "gh", "hosts.yml"]),
           readToken_ghYml,
           false,
         );
+        if (this._destroyed) return;
         if (token) return this._fetchUsage(token);
       }
 
-      // 2) Copilot CLI / Neovim / Vim  ~/.config/github-copilot/hosts.json
+      // 3) Copilot CLI / Neovim / Vim  ~/.config/github-copilot/hosts.json
       {
         const token = await this._readFileToken(
           GLib.build_filenamev([
@@ -400,10 +446,11 @@ const CopilotUsageIndicator = GObject.registerClass(
           readToken_hostsJson,
           true,
         );
+        if (this._destroyed) return;
         if (token) return this._fetchUsage(token);
       }
 
-      // 3) Copilot apps config  ~/.config/github-copilot/apps.json
+      // 4) Copilot apps config  ~/.config/github-copilot/apps.json
       {
         const token = await this._readFileToken(
           GLib.build_filenamev([
@@ -415,10 +462,27 @@ const CopilotUsageIndicator = GObject.registerClass(
           readToken_appsJson,
           true,
         );
+        if (this._destroyed) return;
         if (token) return this._fetchUsage(token);
       }
 
-      // 4) Manual token from extension settings
+      // 5) VS Code / newer Copilot extension  ~/.config/github-copilot/oauth.json
+      {
+        const token = await this._readFileToken(
+          GLib.build_filenamev([
+            home,
+            ".config",
+            "github-copilot",
+            "oauth.json",
+          ]),
+          readToken_oauthJson,
+          true,
+        );
+        if (this._destroyed) return;
+        if (token) return this._fetchUsage(token);
+      }
+
+      // 6) Manual token from extension settings
       {
         const token = this._settings.get_string("github-token").trim();
         if (token) return this._fetchUsage(token);
@@ -429,6 +493,40 @@ const CopilotUsageIndicator = GObject.registerClass(
         "No Copilot credentials found",
         "The extension checked for GitHub CLI, Copilot CLI,\nand Neovim/Vim plugin tokens but found nothing.\n\nOpen Settings to add your GitHub token manually.",
       );
+    }
+
+    /**
+     * Spawns an external command and returns the first non-empty line of its
+     * stdout, or null on any error (command not found, non-zero exit, etc.).
+     */
+    private _runSubprocessToken(
+      argv0: string,
+      args: string[],
+    ): Promise<string | null> {
+      return new Promise((resolve) => {
+        try {
+          const proc = Gio.Subprocess.new(
+            [argv0, ...args],
+            Gio.SubprocessFlags.STDOUT_PIPE |
+              Gio.SubprocessFlags.STDERR_SILENCE,
+          );
+          proc.communicate_utf8_async(
+            null,
+            null,
+            (_proc: Gio.Subprocess | null, result: Gio.AsyncResult) => {
+              try {
+                const [, stdout] = proc.communicate_utf8_finish(result);
+                const token = stdout?.trim() ?? null;
+                resolve(token || null);
+              } catch {
+                resolve(null);
+              }
+            },
+          );
+        } catch {
+          resolve(null);
+        }
+      });
     }
 
     /**
@@ -648,6 +746,8 @@ const CopilotUsageIndicator = GObject.registerClass(
     // ── Cleanup ───────────────────────────────────────────────────────
 
     override destroy(): void {
+      // Signal all in-flight async operations to bail out immediately.
+      this._destroyed = true;
       this._stopTimer();
       if (this._settingsChangedId !== null) {
         this._settings.disconnect(this._settingsChangedId);
