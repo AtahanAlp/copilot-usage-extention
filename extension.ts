@@ -47,7 +47,9 @@ interface CopilotUsageData {
 
 interface UsageRowResult {
   bar: St.Widget;
+  bgBar: St.Widget;
   percentLabel: St.Label;
+  usedLabel: St.Label;
   item: PopupMenu.PopupBaseMenuItem;
 }
 
@@ -110,6 +112,12 @@ function readToken_ghYml(content: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Plans that have a hard monthly cap on Chat messages (currently only "free").
+// All paid plans (pro, pro+, business, enterprise, …) get unlimited chat.
+// ---------------------------------------------------------------------------
+const CHAT_LIMITED_PLANS = new Set(["free", "copilot_free", "copilot-free"]);
+
+// ---------------------------------------------------------------------------
 // Panel indicator
 // ---------------------------------------------------------------------------
 
@@ -128,12 +136,11 @@ const CopilotUsageIndicator = GObject.registerClass(
     private _menuState: string | null = null;
     private _timerId: number | null = null;
     private _settingsChangedId: number | null = null;
-    // Becomes `false` via the class-field initialiser (runs after _init, which
-    // is fine because _init never sets _destroyed).
     private _destroyed = false;
 
     // Panel widget
-    declare private _panelLabel: St.Label;
+    declare private _panelIcon: St.Icon;
+    declare private _warningDot: St.Widget;
 
     // Setup state items
     declare private _setupItem: PopupMenu.PopupBaseMenuItem;
@@ -143,24 +150,18 @@ const CopilotUsageIndicator = GObject.registerClass(
     declare private _setupBody: St.Label;
 
     // Usage state items
-    declare private _planItem: PopupMenu.PopupBaseMenuItem;
+    declare private _headerItem: PopupMenu.PopupBaseMenuItem;
     declare private _planLabel: St.Label;
-    declare private _usageSep1: PopupMenu.PopupSeparatorMenuItem;
-    declare private _usageSep2: PopupMenu.PopupSeparatorMenuItem;
-    declare private _usageSep3: PopupMenu.PopupSeparatorMenuItem;
-    declare private _premiumProgressBar: St.Widget;
-    declare private _premiumPercent: St.Label;
-    declare private _premiumPercentItem: PopupMenu.PopupBaseMenuItem;
-    declare private _chatProgressBar: St.Widget;
-    declare private _chatPercent: St.Label;
-    declare private _chatPercentItem: PopupMenu.PopupBaseMenuItem;
+    declare private _premiumResult: UsageRowResult;
+    declare private _chatResult: UsageRowResult;
+    declare private _chatSep: PopupMenu.PopupSeparatorMenuItem;
     declare private _footerItem: PopupMenu.PopupBaseMenuItem;
     declare private _updatedLabel: St.Label;
 
     // Shared
     declare private _sharedSep: PopupMenu.PopupSeparatorMenuItem;
+    declare private _settingsItem: PopupMenu.PopupMenuItem;
 
-    // Convenience accessor that narrows the menu union to PopupMenu.PopupMenu
     private get _popupMenu(): PopupMenu.PopupMenu {
       return this.menu as PopupMenu.PopupMenu;
     }
@@ -175,21 +176,24 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._menuState = null;
 
       // ── Panel widget ──────────────────────────────────────────────
-      const box = new St.BoxLayout({ style_class: "panel-status-menu-box" });
-
-      box.add_child(
-        new St.Icon({
-          icon_name: "system-run-symbolic",
-          style_class: "system-status-icon",
-        }),
-      );
-
-      this._panelLabel = new St.Label({
-        text: "…",
+      const box = new St.BoxLayout({
+        style_class: "panel-status-menu-box",
         y_align: Clutter.ActorAlign.CENTER,
-        style_class: "copilot-panel-label",
       });
-      box.add_child(this._panelLabel);
+
+      this._panelIcon = new St.Icon({
+        icon_name: "starred-symbolic",
+        style_class: "system-status-icon copilot-panel-icon",
+      });
+      box.add_child(this._panelIcon);
+
+      // Small warning dot – shown for error/setup states
+      this._warningDot = new St.Widget({
+        style_class: "copilot-warning-dot",
+        visible: false,
+      });
+      box.add_child(this._warningDot);
+
       this.add_child(box);
 
       // ── Build menu ────────────────────────────────────────────────
@@ -218,7 +222,7 @@ const CopilotUsageIndicator = GObject.registerClass(
     // ── Menu construction ─────────────────────────────────────────────
 
     private _buildMenu(): void {
-      // === SETUP STATE items ==========================================
+      // ── SETUP STATE ────────────────────────────────────────────────
 
       this._setupItem = new PopupMenu.PopupBaseMenuItem({
         reactive: false,
@@ -229,19 +233,6 @@ const CopilotUsageIndicator = GObject.registerClass(
         vertical: true,
       });
 
-      const setupIconRow = new St.BoxLayout({
-        vertical: false,
-        style_class: "copilot-setup-icon-row",
-      });
-      setupIconRow.add_child(
-        new St.Icon({
-          icon_name: "dialog-password-symbolic",
-          style_class: "copilot-setup-icon",
-          icon_size: 32,
-        }),
-      );
-      setupBox.add_child(setupIconRow);
-
       this._setupHeading = new St.Label({
         text: "GitHub Token Required",
         style_class: "copilot-setup-heading",
@@ -249,7 +240,7 @@ const CopilotUsageIndicator = GObject.registerClass(
       setupBox.add_child(this._setupHeading);
 
       this._setupBody = new St.Label({
-        text: "No Copilot credentials were found on this system.\nOpen Settings to add your GitHub token.",
+        text: "No credentials found. Open Settings to add your token.",
         style_class: "copilot-setup-body",
       });
       this._setupBody.clutter_text.set_line_wrap(true);
@@ -267,80 +258,94 @@ const CopilotUsageIndicator = GObject.registerClass(
       });
       this._popupMenu.addMenuItem(this._openSettingsItem);
 
-      // === USAGE STATE items ==========================================
+      // ── USAGE STATE ────────────────────────────────────────────────
 
-      // Plan row
-      this._planItem = new PopupMenu.PopupBaseMenuItem({
+      // Header row: "Copilot Usage" title + plan badge
+      this._headerItem = new PopupMenu.PopupBaseMenuItem({
         reactive: false,
         can_focus: false,
       });
-      const planBox = new St.BoxLayout({
-        style_class: "copilot-plan-box",
+      const headerBox = new St.BoxLayout({
+        style_class: "copilot-header-box",
         vertical: false,
       });
-      planBox.add_child(
-        new St.Icon({
-          icon_name: "avatar-default-symbolic",
-          style_class: "copilot-plan-icon",
-          icon_size: 14,
-        }),
-      );
+      const headerTitle = new St.Label({
+        text: "Copilot Usage",
+        style_class: "copilot-header-title",
+        y_align: Clutter.ActorAlign.CENTER,
+        x_expand: true,
+      });
       this._planLabel = new St.Label({
-        text: "Plan: …",
-        style_class: "copilot-plan-label",
+        text: "",
+        style_class: "copilot-plan-badge",
         y_align: Clutter.ActorAlign.CENTER,
       });
-      planBox.add_child(this._planLabel);
-      this._planItem.add_child(planBox);
-      this._popupMenu.addMenuItem(this._planItem);
+      headerBox.add_child(headerTitle);
+      headerBox.add_child(this._planLabel);
+      this._headerItem.add_child(headerBox);
+      this._popupMenu.addMenuItem(this._headerItem);
 
-      this._usageSep1 = new PopupMenu.PopupSeparatorMenuItem();
-      this._popupMenu.addMenuItem(this._usageSep1);
+      // Premium Requests row
+      this._premiumResult = this._addUsageRow("Premium Requests");
 
-      // Premium Interactions row
-      const premiumResult = this._addUsageRow("Premium Interactions");
-      this._premiumProgressBar = premiumResult.bar;
-      this._premiumPercent = premiumResult.percentLabel;
-      this._premiumPercentItem = premiumResult.item;
+      // Chat row (only shown for free plan)
+      this._chatSep = new PopupMenu.PopupSeparatorMenuItem();
+      this._popupMenu.addMenuItem(this._chatSep);
+      this._chatResult = this._addUsageRow("Chat Messages");
 
-      this._usageSep2 = new PopupMenu.PopupSeparatorMenuItem();
-      this._popupMenu.addMenuItem(this._usageSep2);
-
-      // Chat row
-      const chatResult = this._addUsageRow("Chat");
-      this._chatProgressBar = chatResult.bar;
-      this._chatPercent = chatResult.percentLabel;
-      this._chatPercentItem = chatResult.item;
-
-      this._usageSep3 = new PopupMenu.PopupSeparatorMenuItem();
-      this._popupMenu.addMenuItem(this._usageSep3);
-
-      // Footer (always visible when in usage state)
+      // Footer row: timestamp + inline refresh button
       this._footerItem = new PopupMenu.PopupBaseMenuItem({
         reactive: false,
         can_focus: false,
       });
+      const footerBox = new St.BoxLayout({
+        style_class: "copilot-footer-box",
+        vertical: false,
+      });
       this._updatedLabel = new St.Label({
         text: "Not yet refreshed",
         style_class: "copilot-updated-label",
+        y_align: Clutter.ActorAlign.CENTER,
+        x_expand: true,
       });
-      this._footerItem.add_child(this._updatedLabel);
+      footerBox.add_child(this._updatedLabel);
+
+      // Inline refresh icon button
+      const refreshBtn = new St.Button({
+        style_class: "copilot-refresh-btn",
+        child: new St.Icon({
+          icon_name: "view-refresh-symbolic",
+          style_class: "copilot-refresh-icon",
+        }),
+        reactive: true,
+        can_focus: true,
+        track_hover: true,
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+      refreshBtn.connect("clicked", () => this._refreshUsage());
+      footerBox.add_child(refreshBtn);
+      this._footerItem.add_child(footerBox);
       this._popupMenu.addMenuItem(this._footerItem);
 
-      // === SHARED items ===============================================
+      // ── SHARED separator + Settings item ───────────────────────────
 
       this._sharedSep = new PopupMenu.PopupSeparatorMenuItem();
       this._popupMenu.addMenuItem(this._sharedSep);
 
-      const refreshItem = new PopupMenu.PopupMenuItem(_("Refresh"));
-      refreshItem.connect("activate", () => this._refreshUsage());
-      this._popupMenu.addMenuItem(refreshItem);
+      this._settingsItem = new PopupMenu.PopupMenuItem(_("Settings"));
+      this._settingsItem.connect("activate", () => this._openPreferences());
+      this._popupMenu.addMenuItem(this._settingsItem);
 
       // Start in setup state until we know better
       this._setMenuState("setup");
     }
 
-    /** Adds a titled progress-bar row and returns the bar, label and item. */
+    /**
+     * Adds a titled progress-bar row and returns handles to its dynamic parts.
+     * Layout:
+     *   [ Title label            used-label ]
+     *   [ ████████░░░░░░░░░░░░  percent-label ]
+     */
     private _addUsageRow(title: string): UsageRowResult {
       const item = new PopupMenu.PopupBaseMenuItem({
         reactive: false,
@@ -351,19 +356,25 @@ const CopilotUsageIndicator = GObject.registerClass(
         vertical: true,
       });
 
-      const header = new St.BoxLayout({ vertical: false });
+      // Header row: title + used absolute label
+      const header = new St.BoxLayout({
+        style_class: "copilot-row-header",
+        vertical: false,
+      });
       header.add_child(
         new St.Label({ text: title, style_class: "copilot-section-title" }),
       );
-      const percentLabel = new St.Label({
-        text: "…",
-        style_class: "copilot-percent-label",
+      const usedLabel = new St.Label({
+        text: "",
+        style_class: "copilot-used-label",
         x_expand: true,
         x_align: Clutter.ActorAlign.END,
+        y_align: Clutter.ActorAlign.CENTER,
       });
-      header.add_child(percentLabel);
+      header.add_child(usedLabel);
       section.add_child(header);
 
+      // Progress bar track
       const bg = new St.Widget({ style_class: "copilot-progress-bg" });
       const bar = new St.Widget({
         style_class: "copilot-progress-bar usage-low",
@@ -371,10 +382,23 @@ const CopilotUsageIndicator = GObject.registerClass(
       bg.add_child(bar);
       section.add_child(bg);
 
+      // Sub-footer: "X% used" left, "Y remaining" right
+      const subFooter = new St.BoxLayout({
+        style_class: "copilot-row-subfooter",
+        vertical: false,
+      });
+      const percentLabel = new St.Label({
+        text: "",
+        style_class: "copilot-percent-label",
+        x_expand: true,
+      });
+      subFooter.add_child(percentLabel);
+      section.add_child(subFooter);
+
       item.add_child(section);
       this._popupMenu.addMenuItem(item);
 
-      return { bar, percentLabel, item };
+      return { bar, bgBar: bg, percentLabel, usedLabel, item };
     }
 
     // ── State switching ───────────────────────────────────────────────
@@ -391,39 +415,46 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._openSettingsItem.visible = isSetup;
 
       // Usage items
-      this._planItem.visible = !isSetup;
-      this._usageSep1.visible = !isSetup;
-      this._premiumPercentItem.visible = !isSetup;
-      this._usageSep2.visible = !isSetup;
-      this._chatPercentItem.visible = !isSetup;
-      this._usageSep3.visible = !isSetup;
+      this._headerItem.visible = !isSetup;
+      this._premiumResult.item.visible = !isSetup;
       this._footerItem.visible = !isSetup;
 
-      // Shared separator always visible
+      // Chat row visibility controlled separately by _updateChatVisibility()
+      // Default hidden; shown only when plan is free
+      if (isSetup) {
+        this._chatResult.item.visible = false;
+        this._chatSep.visible = false;
+      }
+
+      // Shared always visible
       this._sharedSep.visible = true;
+      this._settingsItem.visible = true;
+    }
+
+    private _updateChatVisibility(plan: string | null): void {
+      const isLimited =
+        plan !== null && CHAT_LIMITED_PLANS.has(plan.toLowerCase());
+      this._chatResult.item.visible = isLimited;
+      this._chatSep.visible = isLimited;
     }
 
     // ── Token resolution ──────────────────────────────────────────────
 
     private _refreshUsage(): void {
-      this._panelLabel.set_text("…");
       this._resolveToken();
     }
 
     private async _resolveToken(): Promise<void> {
       const home = GLib.get_home_dir();
 
-      // 1) GitHub CLI via subprocess – works even when gh stores the token in
-      //    the system keyring (newer gh versions no longer write oauth_token to
-      //    hosts.yml, so the file-based YAML parser below is a legacy fallback).
+      // 1) GitHub CLI via subprocess
       {
         const token = await this._runSubprocessToken("gh", ["auth", "token"]);
         if (this._destroyed) return;
         if (token) return this._fetchUsage(token);
       }
 
-      // 2) GitHub CLI hosts.yml (legacy – older gh versions that wrote the
-      //    token directly to the file)
+      // 2) GitHub CLI hosts.yml (legacy)
       {
         const token = await this._readFileToken(
           GLib.build_filenamev([home, ".config", "gh", "hosts.yml"]),
@@ -490,15 +521,11 @@ const CopilotUsageIndicator = GObject.registerClass(
 
       // Nothing found – show setup UI
       this._showSetupState(
-        "No Copilot credentials found",
-        "The extension checked for GitHub CLI, Copilot CLI,\nand Neovim/Vim plugin tokens but found nothing.\n\nOpen Settings to add your GitHub token manually.",
+        "GitHub Token Required",
+        "No credentials found. Open Settings to add your token.",
       );
     }
 
-    /**
-     * Spawns an external command and returns the first non-empty line of its
-     * stdout, or null on any error (command not found, non-zero exit, etc.).
-     */
     private _runSubprocessToken(
       argv0: string,
       args: string[],
@@ -529,10 +556,6 @@ const CopilotUsageIndicator = GObject.registerClass(
       });
     }
 
-    /**
-     * Reads a file and extracts a token via the provided extractor function.
-     * Silently returns null on any error (file missing, parse failure, etc.).
-     */
     private _readFileToken(
       filePath: string,
       extractFn: TokenExtractor,
@@ -581,8 +604,8 @@ const CopilotUsageIndicator = GObject.registerClass(
 
             if (message.status_code === 401 || message.status_code === 403) {
               this._showSetupState(
-                "Token invalid or expired",
-                "The stored GitHub token was rejected by the API.\nPlease update your token in Settings.",
+                "Token Invalid or Expired",
+                "The stored token was rejected. Update it in Settings.",
               );
               return;
             }
@@ -627,96 +650,119 @@ const CopilotUsageIndicator = GObject.registerClass(
       if (!plan && !premium && !chat) {
         console.warn(
           "Copilot Usage: response has no plan/quota fields.",
-          "Token may lack Copilot permissions.",
           "Full response:",
           JSON.stringify(data),
         );
         this._showSetupState(
-          "Copilot data unavailable",
-          "The API returned a response but no usage data was found.\n\n" +
-            "Your token may not have Copilot permissions.\n" +
-            "Try: gh auth refresh -s read:user\nor add a fresh token in Settings.",
+          "Copilot Data Unavailable",
+          "API returned no usage data. Your token may lack Copilot permissions.",
         );
         return;
       }
 
       this._setMenuState("usage");
 
-      // Plan label
-      this._planLabel.set_text(
-        `Plan: ${plan ? this._formatPlan(plan) : "Unknown"}`,
-      );
+      // Plan badge
+      this._planLabel.set_text(plan ? this._formatPlan(plan) : "");
+
+      // Decide chat visibility based on plan
+      this._updateChatVisibility(plan);
 
       const pctRemaining = (
         snap: QuotaSnapshot | null | undefined,
       ): number | null =>
         snap?.percent_remaining ?? snap?.percentRemaining ?? null;
 
-      // Premium Interactions
+      // Premium Requests
       const premR = pctRemaining(premium);
       if (premR !== null) {
         const used = 100 - premR;
-        this._premiumPercent.set_text(`${used.toFixed(1)} % used`);
-        this._updateBar(this._premiumProgressBar, used);
+        this._updateBar(this._premiumResult.bar, used);
+        this._premiumResult.usedLabel.set_text(`${Math.round(used)}%`);
+        this._premiumResult.percentLabel.set_text(
+          `${premR.toFixed(0)}% remaining`,
+        );
       } else {
-        this._premiumPercent.set_text("unlimited");
-        this._updateBar(this._premiumProgressBar, 0);
+        this._updateBar(this._premiumResult.bar, 0);
+        this._premiumResult.usedLabel.set_text("unlimited");
+        this._premiumResult.percentLabel.set_text("");
       }
 
-      // Chat
+      // Chat (only rendered when plan is free, but update values always)
       const chatR = pctRemaining(chat);
       if (chatR !== null) {
         const used = 100 - chatR;
-        this._chatPercent.set_text(`${used.toFixed(1)} % used`);
-        this._updateBar(this._chatProgressBar, used);
+        this._updateBar(this._chatResult.bar, used);
+        this._chatResult.usedLabel.set_text(`${Math.round(used)}%`);
+        this._chatResult.percentLabel.set_text(
+          `${chatR.toFixed(0)}% remaining`,
+        );
       } else {
-        this._chatPercent.set_text("unlimited");
-        this._updateBar(this._chatProgressBar, 0);
+        this._updateBar(this._chatResult.bar, 0);
+        this._chatResult.usedLabel.set_text("unlimited");
+        this._chatResult.percentLabel.set_text("");
       }
 
-      // Panel label – prefer premium, fall back to chat
-      const primaryUsed =
-        premR !== null ? 100 - premR : chatR !== null ? 100 - chatR : null;
-      this._panelLabel.set_text(
-        primaryUsed !== null ? `${Math.round(primaryUsed)} %` : "Copilot",
-      );
+      // Panel icon — use warning dot only when premium is nearly exhausted
+      if (premR !== null && premR <= 10) {
+        this._warningDot.visible = true;
+        this._warningDot.add_style_class_name(
+          premR <= 0 ? "dot-critical" : "dot-high",
+        );
+      } else {
+        this._warningDot.visible = false;
+        this._warningDot.remove_style_class_name("dot-critical");
+        this._warningDot.remove_style_class_name("dot-high");
+      }
 
-      this._updatedLabel.set_text(
-        `Updated: ${new Date().toLocaleTimeString()}`,
-      );
+      // Timestamp – HH:MM only
+      const now = new Date();
+      const hh = now.getHours().toString().padStart(2, "0");
+      const mm = now.getMinutes().toString().padStart(2, "0");
+      this._updatedLabel.set_text(`Updated ${hh}:${mm}`);
     }
 
     private _showSetupState(heading: string, body: string): void {
       this._setMenuState("setup");
       this._setupHeading.set_text(heading);
       this._setupBody.set_text(body);
-      this._panelLabel.set_text("?");
+      this._warningDot.visible = true;
+      this._warningDot.remove_style_class_name("dot-critical");
+      this._warningDot.add_style_class_name("dot-high");
     }
 
     private _showNetworkError(detail: string): void {
-      this._panelLabel.set_text("!");
       if (this._updatedLabel) this._updatedLabel.set_text(`Error: ${detail}`);
+      this._warningDot.visible = true;
+      this._warningDot.remove_style_class_name("dot-critical");
+      this._warningDot.add_style_class_name("dot-high");
     }
 
     private _formatPlan(raw: string): string {
-      return raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      return raw.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
     }
 
     // ── Progress bar ──────────────────────────────────────────────────
 
     private _updateBar(bar: St.Widget, pct: number): void {
-      const MAX_PX = 220;
-      bar.set_width(
-        Math.round((Math.min(100, Math.max(0, pct)) / 100) * MAX_PX),
-      );
+      // The bar width is calculated as a fraction of the track's allocated
+      // width. We defer to CSS min-width on the bg to determine the base size,
+      // and use a style property here so it scales correctly.
+      const clampedPct = Math.min(100, Math.max(0, pct));
+
+      // Write the fill percentage as a custom CSS-driven width via inline style.
+      // We use a fixed pixel base matching .copilot-progress-bg min-width (260px)
+      // minus the horizontal padding (8px each side) = 244px track width.
+      const TRACK_PX = 244;
+      bar.set_width(Math.round((clampedPct / 100) * TRACK_PX));
 
       (
         ["usage-low", "usage-medium", "usage-high", "usage-critical"] as const
       ).forEach((c) => bar.remove_style_class_name(c));
 
-      if (pct >= 90) bar.add_style_class_name("usage-critical");
-      else if (pct >= 70) bar.add_style_class_name("usage-high");
-      else if (pct >= 40) bar.add_style_class_name("usage-medium");
+      if (clampedPct >= 90) bar.add_style_class_name("usage-critical");
+      else if (clampedPct >= 70) bar.add_style_class_name("usage-high");
+      else if (clampedPct >= 40) bar.add_style_class_name("usage-medium");
       else bar.add_style_class_name("usage-low");
     }
 
@@ -746,7 +792,6 @@ const CopilotUsageIndicator = GObject.registerClass(
     // ── Cleanup ───────────────────────────────────────────────────────
 
     override destroy(): void {
-      // Signal all in-flight async operations to bail out immediately.
       this._destroyed = true;
       this._stopTimer();
       if (this._settingsChangedId !== null) {
@@ -761,10 +806,7 @@ const CopilotUsageIndicator = GObject.registerClass(
   },
 );
 
-// Type alias for instances of the registered indicator class
 type CopilotUsageIndicatorInstance = InstanceType<typeof CopilotUsageIndicator>;
-
-// ---------------------------------------------------------------------------
 
 export default class CopilotUsageExtension extends Extension {
   private _indicator: CopilotUsageIndicatorInstance | null = null;

@@ -1,118 +1,202 @@
-/* Copilot Usage Extension Stylesheet */
+/* Copilot Usage Extension – Stylesheet
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * Design principles:
+ *  - Follow GNOME Shell HIG: use system font sizes, opacities, and spacing
+ *  - Minimal visual weight – no decorative borders or heavy backgrounds
+ *  - Progress bar is the main focal point; everything else is secondary
+ */
 
-/* ── Panel label ──────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   PANEL INDICATOR
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-.copilot-panel-label {
-    margin-left: 4px;
-    font-size: 11px;
+/* The icon itself inherits .system-status-icon sizing from GNOME Shell. */
+.copilot-panel-icon {
+    /* no extra margin needed; panel-status-menu-box handles spacing */
 }
 
-/* ── Popup menu sections ──────────────────────────────────────────── */
-
-.copilot-usage-section {
-    min-width: 240px;
-    padding: 2px 4px;
-    spacing: 6px;
+/* Small badge dot shown when token is missing, invalid, or usage is critical */
+.copilot-warning-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    margin-left: -6px; /* overlap bottom-right of icon */
+    margin-bottom: -4px;
 }
 
-/* ── Plan row ─────────────────────────────────────────────────────── */
+.copilot-warning-dot.dot-high {
+    background-color: #f0883e;
+}
 
-.copilot-plan-box {
-    min-width: 240px;
-    padding: 2px 4px;
+.copilot-warning-dot.dot-critical {
+    background-color: #f85149;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   POPUP MENU – SHARED BASE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* Every content row inside the popup gets this min-width so the menu
+   never collapses to an awkward narrow size. */
+.copilot-header-box,
+.copilot-usage-section,
+.copilot-setup-box,
+.copilot-footer-box {
+    min-width: 260px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HEADER ROW  (title + plan badge)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.copilot-header-box {
+    padding: 2px 0px 4px 0px;
     spacing: 8px;
 }
 
-.copilot-plan-icon {
-    opacity: 0.7;
-}
-
-.copilot-plan-label {
-    font-size: 12px;
-    opacity: 0.85;
-}
-
-/* ── Usage rows ───────────────────────────────────────────────────── */
-
-.copilot-section-title {
-    font-size: 12px;
+.copilot-header-title {
+    font-size: 13px;
     font-weight: bold;
 }
 
-.copilot-percent-label {
-    font-size: 12px;
+/* Subtle pill-shaped plan badge on the right */
+.copilot-plan-badge {
+    font-size: 10px;
+    font-weight: 600;
+    opacity: 0.65;
+    border-radius: 4px;
+    padding: 1px 5px;
+    background-color: rgba(255, 255, 255, 0.08);
 }
 
-/* ── Progress bar ─────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   USAGE ROW  (title line + bar + sub-footer)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.copilot-usage-section {
+    padding: 4px 0px;
+    spacing: 0px;
+}
+
+/* Row: [ Section title ············ XX% ] */
+.copilot-row-header {
+    spacing: 6px;
+}
+
+.copilot-section-title {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* Right-aligned percentage used – primary at-a-glance number */
+.copilot-used-label {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   PROGRESS BAR
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 .copilot-progress-bg {
-    height: 6px;
-    min-width: 240px;
-    margin-top: 6px;
-    margin-bottom: 2px;
-    border-radius: 3px;
-    background-color: rgba(255, 255, 255, 0.15);
+    height: 8px;
+    min-width: 260px;
+    margin-top: 7px;
+    margin-bottom: 5px;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.12);
 }
 
 .copilot-progress-bar {
-    height: 6px;
-    border-radius: 3px;
+    height: 8px;
+    border-radius: 4px;
+    /* Smooth colour transitions when the tier changes */
+    transition-duration: 300ms;
+    transition-property: background-color;
 }
 
-/* Usage level colours */
+/* ── Tier colours – GitHub-flavoured ─────────────────────────────── */
 
 .copilot-progress-bar.usage-low {
-    background-color: #3fb950; /* green */
+    background-color: #3fb950; /* green  – 0–39 % used  */
 }
 
 .copilot-progress-bar.usage-medium {
-    background-color: #d29922; /* yellow */
+    background-color: #d29922; /* amber  – 40–69 % used */
 }
 
 .copilot-progress-bar.usage-high {
-    background-color: #f0883e; /* orange */
+    background-color: #f0883e; /* orange – 70–89 % used */
 }
 
 .copilot-progress-bar.usage-critical {
-    background-color: #f85149; /* red */
+    background-color: #f85149; /* red    – 90–100 % used */
 }
 
-/* ── Footer ───────────────────────────────────────────────────────── */
+/* ── Sub-footer: "XX% remaining" hint ────────────────────────────── */
 
-.copilot-updated-label {
+.copilot-row-subfooter {
+    spacing: 4px;
+}
+
+.copilot-percent-label {
     font-size: 10px;
-    opacity: 0.55;
+    opacity: 0.5;
 }
 
-/* ── Setup state ──────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   FOOTER ROW  (timestamp + refresh button)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-.copilot-setup-box {
-    min-width: 260px;
-    padding: 8px 4px 4px 4px;
+.copilot-footer-box {
+    padding: 2px 0px 0px 0px;
     spacing: 8px;
 }
 
-.copilot-setup-icon-row {
-    /* centre the icon horizontally */
-    x-align: center;
+.copilot-updated-label {
+    font-size: 10px;
+    opacity: 0.45;
 }
 
-.copilot-setup-icon {
-    icon-size: 32px;
+/* Icon-only refresh button – matches GNOME's subtle icon-button style */
+.copilot-refresh-btn {
+    border-radius: 6px;
+    padding: 3px;
+    background-color: transparent;
+    border: none;
+    /* Hover glow comes from GNOME Shell's default :hover pseudo-class */
+}
+
+.copilot-refresh-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.copilot-refresh-btn:active {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.copilot-refresh-icon {
+    icon-size: 12px;
     opacity: 0.6;
-    /* centre within the row */
-    x-expand: true;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SETUP / ERROR STATE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.copilot-setup-box {
+    padding: 6px 2px 4px 2px;
+    spacing: 5px;
 }
 
 .copilot-setup-heading {
     font-size: 13px;
     font-weight: bold;
-    text-align: center;
 }
 
 .copilot-setup-body {
     font-size: 11px;
-    opacity: 0.7;
-    text-align: center;
-    /* allow wrapping – controlled in JS via clutter_text */
+    opacity: 0.65;
+    /* line-wrap is enabled in JS via clutter_text.set_line_wrap(true) */
 }
