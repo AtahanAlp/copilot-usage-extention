@@ -119,19 +119,19 @@
 /* ── Tier colours – GitHub-flavoured ─────────────────────────────── */
 
 .copilot-progress-bar.usage-low {
-    background-color: #3fb950; /* green  – 0–39 % used  */
+    background-color: #3fb950;
 }
 
 .copilot-progress-bar.usage-medium {
-    background-color: #d29922; /* amber  – 40–69 % used */
+    background-color: #d29922;
 }
 
 .copilot-progress-bar.usage-high {
-    background-color: #f0883e; /* orange – 70–89 % used */
+    background-color: #f0883e;
 }
 
 .copilot-progress-bar.usage-critical {
-    background-color: #f85149; /* red    – 90–100 % used */
+    background-color: #f85149;
 }
 
 /* ── Sub-footer: "XX% remaining" hint ────────────────────────────── */
@@ -185,18 +185,11 @@
    SETTINGS ITEM
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* Visually separated from the content above via a top border that acts
-   as a lightweight divider — no PopupSeparatorMenuItem needed. */
-.copilot-settings-item {
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    padding-top: 4px;
-}
-
 /* Dim the label to match the subdued tone of the footer/timestamp,
    so it doesn't compete visually with the usage data above. */
-.copilot-settings-item StLabel {
-    font-size: 12px;
-    opacity: 0.55;
+.copilot-settings-label {
+    font-size: 14px;
+    opacity: 0.6;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

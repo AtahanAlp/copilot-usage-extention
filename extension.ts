@@ -155,11 +155,11 @@ const CopilotUsageIndicator = GObject.registerClass(
     declare private _planLabel: St.Label;
     declare private _premiumResult: UsageRowResult;
     declare private _chatResult: UsageRowResult;
-    declare private _chatSep: PopupMenu.PopupSeparatorMenuItem;
     declare private _footerItem: PopupMenu.PopupBaseMenuItem;
     declare private _updatedLabel: St.Label;
 
     // Shared
+    declare private _sharedSep: PopupMenu.PopupSeparatorMenuItem;
     declare private _settingsItem: PopupMenu.PopupMenuItem;
 
     private get _popupMenu(): PopupMenu.PopupMenu {
@@ -303,8 +303,6 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._premiumResult = this._addUsageRow("Premium Requests");
 
       // Chat row (only shown for free plan)
-      this._chatSep = new PopupMenu.PopupSeparatorMenuItem();
-      this._popupMenu.addMenuItem(this._chatSep);
       this._chatResult = this._addUsageRow("Chat Messages");
 
       // Footer row: timestamp + inline refresh button
@@ -342,9 +340,11 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._popupMenu.addMenuItem(this._footerItem);
 
       // ── SHARED Settings item ────────────────────────────────────────
+      this._sharedSep = new PopupMenu.PopupSeparatorMenuItem();
+      this._popupMenu.addMenuItem(this._sharedSep);
 
       this._settingsItem = new PopupMenu.PopupMenuItem(_("Settings"));
-      this._settingsItem.add_style_class_name("copilot-settings-item");
+      (this._settingsItem as any).label.style_class = "copilot-settings-label";
       this._settingsItem.connect("activate", () => this._openPreferences());
       this._popupMenu.addMenuItem(this._settingsItem);
 
@@ -435,10 +435,10 @@ const CopilotUsageIndicator = GObject.registerClass(
       // Default hidden; shown only when plan is free
       if (isSetup) {
         this._chatResult.item.visible = false;
-        this._chatSep.visible = false;
       }
 
       // Shared always visible
+      this._sharedSep.visible = true;
       this._settingsItem.visible = true;
     }
 
@@ -446,7 +446,6 @@ const CopilotUsageIndicator = GObject.registerClass(
       const isLimited =
         plan !== null && CHAT_LIMITED_PLANS.has(plan.toLowerCase());
       this._chatResult.item.visible = isLimited;
-      this._chatSep.visible = isLimited;
     }
 
     // ── Token resolution ──────────────────────────────────────────────
@@ -689,9 +688,9 @@ const CopilotUsageIndicator = GObject.registerClass(
       if (premR !== null) {
         const used = 100 - premR;
         this._updateBar(this._premiumResult.bar, used);
-        this._premiumResult.usedLabel.set_text(`${Math.round(used)}%`);
+        this._premiumResult.usedLabel.set_text(`${used.toFixed(1)}%`);
         this._premiumResult.percentLabel.set_text(
-          `${premR.toFixed(0)}% remaining`,
+          `${premR.toFixed(1)}% remaining`,
         );
       } else {
         this._updateBar(this._premiumResult.bar, 0);
@@ -704,9 +703,9 @@ const CopilotUsageIndicator = GObject.registerClass(
       if (chatR !== null) {
         const used = 100 - chatR;
         this._updateBar(this._chatResult.bar, used);
-        this._chatResult.usedLabel.set_text(`${Math.round(used)}%`);
+        this._chatResult.usedLabel.set_text(`${used.toFixed(1)}%`);
         this._chatResult.percentLabel.set_text(
-          `${chatR.toFixed(0)}% remaining`,
+          `${chatR.toFixed(1)}% remaining`,
         );
       } else {
         this._updateBar(this._chatResult.bar, 0);
@@ -771,9 +770,9 @@ const CopilotUsageIndicator = GObject.registerClass(
         ["usage-low", "usage-medium", "usage-high", "usage-critical"] as const
       ).forEach((c) => bar.remove_style_class_name(c));
 
-      if (clampedPct >= 90) bar.add_style_class_name("usage-critical");
-      else if (clampedPct >= 70) bar.add_style_class_name("usage-high");
-      else if (clampedPct >= 40) bar.add_style_class_name("usage-medium");
+      if (clampedPct >= 85) bar.add_style_class_name("usage-critical");
+      else if (clampedPct >= 60) bar.add_style_class_name("usage-high");
+      else if (clampedPct >= 30) bar.add_style_class_name("usage-medium");
       else bar.add_style_class_name("usage-low");
     }
 
