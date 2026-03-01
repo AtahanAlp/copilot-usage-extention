@@ -344,7 +344,10 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._popupMenu.addMenuItem(this._sharedSep);
 
       this._settingsItem = new PopupMenu.PopupMenuItem(_("Settings"));
-      (this._settingsItem as any).label.style_class = "copilot-settings-label";
+      this._settingsItem.add_style_class_name("copilot-settings-item");
+      (this._settingsItem as any).label.add_style_class_name(
+        "copilot-settings-label",
+      );
       this._settingsItem.connect("activate", () => this._openPreferences());
       this._popupMenu.addMenuItem(this._settingsItem);
 

@@ -185,6 +185,15 @@
    SETTINGS ITEM
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
+/* Add margin around the settings menu item for spacing outside the button */
+.copilot-settings-item {
+    margin: 0 4px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SETTINGS LABEL
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
 /* Dim the label to match the subdued tone of the footer/timestamp,
    so it doesn't compete visually with the usage data above. */
 .copilot-settings-label {
