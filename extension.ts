@@ -132,6 +132,7 @@ const CopilotUsageIndicator = GObject.registerClass(
     // and emits no JavaScript, so it never interferes with _init().
     declare private _settings: Gio.Settings;
     declare private _openPreferences: () => void;
+    declare private _extensionPath: string;
     declare private _session: Soup.Session;
     private _menuState: string | null = null;
     private _timerId: number | null = null;
@@ -159,7 +160,6 @@ const CopilotUsageIndicator = GObject.registerClass(
     declare private _updatedLabel: St.Label;
 
     // Shared
-    declare private _sharedSep: PopupMenu.PopupSeparatorMenuItem;
     declare private _settingsItem: PopupMenu.PopupMenuItem;
 
     private get _popupMenu(): PopupMenu.PopupMenu {
@@ -167,11 +167,16 @@ const CopilotUsageIndicator = GObject.registerClass(
     }
 
     // @ts-expect-error - GObject _init takes different params than the base class TS signature
-    _init(settings: Gio.Settings, openPreferences: () => void): void {
+    _init(
+      settings: Gio.Settings,
+      openPreferences: () => void,
+      extensionPath: string,
+    ): void {
       super._init(0.0, "Copilot Usage Indicator");
 
       this._settings = settings;
       this._openPreferences = openPreferences;
+      this._extensionPath = extensionPath;
       this._session = new Soup.Session();
       this._menuState = null;
 
@@ -181,8 +186,17 @@ const CopilotUsageIndicator = GObject.registerClass(
         y_align: Clutter.ActorAlign.CENTER,
       });
 
+      const iconFile = Gio.File.new_for_path(
+        GLib.build_filenamev([
+          this._extensionPath,
+          "icons",
+          "copilot-icon-symbolic.svg",
+        ]),
+      );
+      const gicon = Gio.FileIcon.new(iconFile);
       this._panelIcon = new St.Icon({
-        icon_name: "starred-symbolic",
+        gicon,
+        icon_size: 16,
         style_class: "system-status-icon copilot-panel-icon",
       });
       box.add_child(this._panelIcon);
@@ -327,12 +341,10 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._footerItem.add_child(footerBox);
       this._popupMenu.addMenuItem(this._footerItem);
 
-      // ── SHARED separator + Settings item ───────────────────────────
-
-      this._sharedSep = new PopupMenu.PopupSeparatorMenuItem();
-      this._popupMenu.addMenuItem(this._sharedSep);
+      // ── SHARED Settings item ────────────────────────────────────────
 
       this._settingsItem = new PopupMenu.PopupMenuItem(_("Settings"));
+      this._settingsItem.add_style_class_name("copilot-settings-item");
       this._settingsItem.connect("activate", () => this._openPreferences());
       this._popupMenu.addMenuItem(this._settingsItem);
 
@@ -427,7 +439,6 @@ const CopilotUsageIndicator = GObject.registerClass(
       }
 
       // Shared always visible
-      this._sharedSep.visible = true;
       this._settingsItem.visible = true;
     }
 
@@ -814,9 +825,11 @@ export default class CopilotUsageExtension extends Extension {
 
   override enable(): void {
     this._settings = this.getSettings();
-    // @ts-expect-error - GObject registered class constructor maps to _init
-    this._indicator = new CopilotUsageIndicator(this._settings, () =>
-      this.openPreferences(),
+    this._indicator = new CopilotUsageIndicator(
+      // @ts-expect-error - GObject registered class constructor maps to _init
+      this._settings,
+      () => this.openPreferences(),
+      this.path,
     ) as CopilotUsageIndicatorInstance;
     Main.panel.addToStatusArea(
       this.uuid,

@@ -31,6 +31,8 @@ $(UUID).zip: dist/extension.js dist/prefs.js schemas/gschemas.compiled
 	@mkdir -p $(STAGING)/schemas
 	@cp dist/extension.js dist/prefs.js            $(STAGING)/
 	@cp metadata.json stylesheet.css               $(STAGING)/
+	@mkdir -p $(STAGING)/icons
+	@cp icons/*                                    $(STAGING)/icons/
 	@cp schemas/*.xml                              $(STAGING)/schemas/
 	@cp schemas/gschemas.compiled                  $(STAGING)/schemas/
 	@(cd $(STAGING) && zip -9r $(CURDIR)/$(UUID).zip .)
@@ -47,6 +49,8 @@ install: dist/extension.js dist/prefs.js schemas/gschemas.compiled
 	@mkdir -p $(EXT_DIR)/schemas
 	@cp dist/extension.js dist/prefs.js            $(EXT_DIR)/
 	@cp metadata.json stylesheet.css               $(EXT_DIR)/
+	@mkdir -p $(EXT_DIR)/icons
+	@cp icons/*                                    $(EXT_DIR)/icons/
 	@cp schemas/*.xml                              $(EXT_DIR)/schemas/
 	@glib-compile-schemas                          $(EXT_DIR)/schemas/
 	@echo "  DONE    restart GNOME Shell to pick up changes"

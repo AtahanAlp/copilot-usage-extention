@@ -56,7 +56,7 @@
 }
 
 .copilot-header-title {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: bold;
 }
 
@@ -179,6 +179,24 @@
 .copilot-refresh-icon {
     icon-size: 12px;
     opacity: 0.6;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SETTINGS ITEM
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* Visually separated from the content above via a top border that acts
+   as a lightweight divider — no PopupSeparatorMenuItem needed. */
+.copilot-settings-item {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 4px;
+}
+
+/* Dim the label to match the subdued tone of the footer/timestamp,
+   so it doesn't compete visually with the usage data above. */
+.copilot-settings-item StLabel {
+    font-size: 12px;
+    opacity: 0.55;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
