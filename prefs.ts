@@ -119,11 +119,10 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
 
     const discoveryGroup = new Adw.PreferencesGroup({
       title: _("Automatic Token Discovery"),
-      description:
-        _(
-          "If a token is found automatically, you do not need to enter one above. " +
-            "The extension checks these locations on startup:",
-        ),
+      description: _(
+        "If a token is found automatically, you do not need to enter one above. " +
+          "The extension checks these locations on startup:",
+      ),
     });
     page.add(discoveryGroup);
 
@@ -131,6 +130,10 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
       [_("GitHub CLI"), "~/.config/gh/hosts.yml"],
       [_("Copilot CLI / Neovim / Vim"), "~/.config/github-copilot/hosts.json"],
       [_("Copilot apps config"), "~/.config/github-copilot/apps.json"],
+      [
+        _("VS Code / newer Copilot extension"),
+        "~/.config/github-copilot/oauth.json",
+      ],
     ];
 
     for (const [source, path] of paths) {
@@ -151,13 +154,15 @@ export default class CopilotUsagePreferences extends ExtensionPreferences {
 
     const refreshRow = new Adw.SpinRow({
       title: _("Auto-refresh Interval"),
-      subtitle: _("How often to refresh usage data (seconds). 0 = never."),
+      subtitle: _(
+        "How often to refresh usage data (seconds). Minimum 30 seconds.",
+      ),
       adjustment: new Gtk.Adjustment({
-        lower: 0,
+        lower: 30,
         upper: 3600,
         step_increment: 30,
         page_increment: 60,
-        value: settings.get_int("refresh-interval"),
+        value: Math.max(30, settings.get_int("refresh-interval")),
       }),
     });
     settings.bind(

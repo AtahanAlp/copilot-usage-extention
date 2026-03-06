@@ -47,7 +47,6 @@ interface CopilotUsageData {
 
 interface UsageRowResult {
   bar: St.Widget;
-  bgBar: St.Widget;
   percentLabel: St.Label;
   usedLabel: St.Label;
   item: PopupMenu.PopupBaseMenuItem;
@@ -117,6 +116,21 @@ function readToken_ghYml(content: unknown): string | null {
 // ---------------------------------------------------------------------------
 const CHAT_LIMITED_PLANS = new Set(["free", "copilot_free", "copilot-free"]);
 
+const PROGRESS_STYLE_CLASSES = [
+  "usage-low",
+  "usage-medium",
+  "usage-high",
+  "usage-critical",
+] as const;
+
+const API_URL = "https://api.github.com/copilot_internal/user";
+
+interface TokenSource {
+  path: string;
+  extract: TokenExtractor;
+  isJson: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Panel indicator
 // ---------------------------------------------------------------------------
@@ -137,7 +151,11 @@ const CopilotUsageIndicator = GObject.registerClass(
     private _menuState: string | null = null;
     private _timerId: number | null = null;
     private _settingsChangedId: number | null = null;
+    private _refreshIntervalChangedId: number | null = null;
+    private _menuOpenChangedId: number | null = null;
     private _destroyed = false;
+    private _refreshGeneration = 0;
+    private _refreshInFlight = false;
 
     // Panel widget
     declare private _panelIcon: St.Icon;
@@ -214,7 +232,7 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._buildMenu();
 
       // Re-fetch every time the menu is opened
-      this._popupMenu.connect(
+      this._menuOpenChangedId = this._popupMenu.connect(
         "open-state-changed",
         (_menu: unknown, open: boolean): undefined => {
           if (open) this._refreshUsage();
@@ -222,10 +240,14 @@ const CopilotUsageIndicator = GObject.registerClass(
         },
       );
 
-      // Respond to manual token being saved in prefs
+      // Respond to settings changes
       this._settingsChangedId = this._settings.connect(
         "changed::github-token",
         () => this._refreshUsage(),
+      );
+      this._refreshIntervalChangedId = this._settings.connect(
+        "changed::refresh-interval",
+        () => this._startTimer(),
       );
 
       // Auto-refresh timer
@@ -273,71 +295,7 @@ const CopilotUsageIndicator = GObject.registerClass(
       this._popupMenu.addMenuItem(this._openSettingsItem);
 
       // ── USAGE STATE ────────────────────────────────────────────────
-
-      // Header row: "Copilot Usage" title + plan badge
-      this._headerItem = new PopupMenu.PopupBaseMenuItem({
-        reactive: false,
-        can_focus: false,
-      });
-      const headerBox = new St.BoxLayout({
-        style_class: "copilot-header-box",
-        vertical: false,
-      });
-      const headerTitle = new St.Label({
-        text: "Copilot Usage",
-        style_class: "copilot-header-title",
-        y_align: Clutter.ActorAlign.CENTER,
-        x_expand: true,
-      });
-      this._planLabel = new St.Label({
-        text: "",
-        style_class: "copilot-plan-badge",
-        y_align: Clutter.ActorAlign.CENTER,
-      });
-      headerBox.add_child(headerTitle);
-      headerBox.add_child(this._planLabel);
-      this._headerItem.add_child(headerBox);
-      this._popupMenu.addMenuItem(this._headerItem);
-
-      // Premium Requests row
-      this._premiumResult = this._addUsageRow("Premium Requests");
-
-      // Chat row (only shown for free plan)
-      this._chatResult = this._addUsageRow("Chat Messages");
-
-      // Footer row: timestamp + inline refresh button
-      this._footerItem = new PopupMenu.PopupBaseMenuItem({
-        reactive: false,
-        can_focus: false,
-      });
-      const footerBox = new St.BoxLayout({
-        style_class: "copilot-footer-box",
-        vertical: false,
-      });
-      this._updatedLabel = new St.Label({
-        text: "Not yet refreshed",
-        style_class: "copilot-updated-label",
-        y_align: Clutter.ActorAlign.CENTER,
-        x_expand: true,
-      });
-      footerBox.add_child(this._updatedLabel);
-
-      // Inline refresh icon button
-      const refreshBtn = new St.Button({
-        style_class: "copilot-refresh-btn",
-        child: new St.Icon({
-          icon_name: "view-refresh-symbolic",
-          style_class: "copilot-refresh-icon",
-        }),
-        reactive: true,
-        can_focus: true,
-        track_hover: true,
-        y_align: Clutter.ActorAlign.CENTER,
-      });
-      refreshBtn.connect("clicked", () => this._refreshUsage());
-      footerBox.add_child(refreshBtn);
-      this._footerItem.add_child(footerBox);
-      this._popupMenu.addMenuItem(this._footerItem);
+      this._buildUsageSection();
 
       // ── SHARED Settings item ────────────────────────────────────────
       this._sharedSep = new PopupMenu.PopupSeparatorMenuItem();
@@ -413,7 +371,85 @@ const CopilotUsageIndicator = GObject.registerClass(
       item.add_child(section);
       this._popupMenu.addMenuItem(item);
 
-      return { bar, bgBar: bg, percentLabel, usedLabel, item };
+      return { bar, percentLabel, usedLabel, item };
+    }
+
+    private _buildUsageSection(): void {
+      this._headerItem = this._createHeaderItem();
+      this._popupMenu.addMenuItem(this._headerItem);
+
+      this._premiumResult = this._addUsageRow("Premium Requests");
+      this._chatResult = this._addUsageRow("Chat Messages");
+
+      this._footerItem = this._createFooterItem();
+      this._popupMenu.addMenuItem(this._footerItem);
+    }
+
+    private _createHeaderItem(): PopupMenu.PopupBaseMenuItem {
+      const item = new PopupMenu.PopupBaseMenuItem({
+        reactive: false,
+        can_focus: false,
+      });
+      const headerBox = new St.BoxLayout({
+        style_class: "copilot-header-box",
+        vertical: false,
+      });
+      const headerTitle = new St.Label({
+        text: "Copilot Usage",
+        style_class: "copilot-header-title",
+        y_align: Clutter.ActorAlign.CENTER,
+        x_expand: true,
+      });
+      this._planLabel = new St.Label({
+        text: "",
+        style_class: "copilot-plan-badge",
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+
+      headerBox.add_child(headerTitle);
+      headerBox.add_child(this._planLabel);
+      item.add_child(headerBox);
+
+      return item;
+    }
+
+    private _createFooterItem(): PopupMenu.PopupBaseMenuItem {
+      const item = new PopupMenu.PopupBaseMenuItem({
+        reactive: false,
+        can_focus: false,
+      });
+      const footerBox = new St.BoxLayout({
+        style_class: "copilot-footer-box",
+        vertical: false,
+      });
+      this._updatedLabel = new St.Label({
+        text: "Not yet refreshed",
+        style_class: "copilot-updated-label",
+        y_align: Clutter.ActorAlign.CENTER,
+        x_expand: true,
+      });
+
+      footerBox.add_child(this._updatedLabel);
+      footerBox.add_child(this._createRefreshButton());
+      item.add_child(footerBox);
+
+      return item;
+    }
+
+    private _createRefreshButton(): St.Button {
+      const refreshBtn = new St.Button({
+        style_class: "copilot-refresh-btn",
+        child: new St.Icon({
+          icon_name: "view-refresh-symbolic",
+          style_class: "copilot-refresh-icon",
+        }),
+        reactive: true,
+        can_focus: true,
+        track_hover: true,
+        y_align: Clutter.ActorAlign.CENTER,
+      });
+      refreshBtn.connect("clicked", () => this._refreshUsage());
+      return refreshBtn;
     }
 
     // ── State switching ───────────────────────────────────────────────
@@ -454,89 +490,106 @@ const CopilotUsageIndicator = GObject.registerClass(
     // ── Token resolution ──────────────────────────────────────────────
 
     private _refreshUsage(): void {
-      this._resolveToken();
+      if (this._destroyed || this._refreshInFlight) return;
+
+      this._refreshInFlight = true;
+      const generation = ++this._refreshGeneration;
+
+      void this._resolveToken(generation).finally(() => {
+        if (generation === this._refreshGeneration) {
+          this._refreshInFlight = false;
+        }
+      });
     }
 
-    private async _resolveToken(): Promise<void> {
+    private _isRefreshCurrent(generation: number): boolean {
+      return !this._destroyed && generation === this._refreshGeneration;
+    }
+
+    private async _resolveToken(generation: number): Promise<void> {
+      const token = await this._findToken(generation);
+      if (!this._isRefreshCurrent(generation)) return;
+
+      if (token) {
+        this._fetchUsage(token, generation);
+        return;
+      }
+
+      this._showSetupState(
+        "GitHub Token Required",
+        "No credentials found. Open Settings to add your token.",
+      );
+    }
+
+    private async _findToken(generation: number): Promise<string | null> {
+      const subprocessToken = await this._runSubprocessToken("gh", [
+        "auth",
+        "token",
+      ]);
+      if (!this._isRefreshCurrent(generation)) return null;
+      if (subprocessToken) return subprocessToken;
+
+      const fileToken = await this._findTokenInFiles(generation);
+      if (!this._isRefreshCurrent(generation)) return null;
+      if (fileToken) return fileToken;
+
+      const settingsToken = this._settings.get_string("github-token").trim();
+      return settingsToken || null;
+    }
+
+    private async _findTokenInFiles(
+      generation: number,
+    ): Promise<string | null> {
       const home = GLib.get_home_dir();
-
-      // 1) GitHub CLI via subprocess
-      {
-        const token = await this._runSubprocessToken("gh", ["auth", "token"]);
-        if (this._destroyed) return;
-        if (token) return this._fetchUsage(token);
-      }
-
-      // 2) GitHub CLI hosts.yml (legacy)
-      {
-        const token = await this._readFileToken(
-          GLib.build_filenamev([home, ".config", "gh", "hosts.yml"]),
-          readToken_ghYml,
-          false,
-        );
-        if (this._destroyed) return;
-        if (token) return this._fetchUsage(token);
-      }
-
-      // 3) Copilot CLI / Neovim / Vim  ~/.config/github-copilot/hosts.json
-      {
-        const token = await this._readFileToken(
-          GLib.build_filenamev([
+      const sources: TokenSource[] = [
+        {
+          path: GLib.build_filenamev([home, ".config", "gh", "hosts.yml"]),
+          extract: readToken_ghYml,
+          isJson: false,
+        },
+        {
+          path: GLib.build_filenamev([
             home,
             ".config",
             "github-copilot",
             "hosts.json",
           ]),
-          readToken_hostsJson,
-          true,
-        );
-        if (this._destroyed) return;
-        if (token) return this._fetchUsage(token);
-      }
-
-      // 4) Copilot apps config  ~/.config/github-copilot/apps.json
-      {
-        const token = await this._readFileToken(
-          GLib.build_filenamev([
+          extract: readToken_hostsJson,
+          isJson: true,
+        },
+        {
+          path: GLib.build_filenamev([
             home,
             ".config",
             "github-copilot",
             "apps.json",
           ]),
-          readToken_appsJson,
-          true,
-        );
-        if (this._destroyed) return;
-        if (token) return this._fetchUsage(token);
-      }
-
-      // 5) VS Code / newer Copilot extension  ~/.config/github-copilot/oauth.json
-      {
-        const token = await this._readFileToken(
-          GLib.build_filenamev([
+          extract: readToken_appsJson,
+          isJson: true,
+        },
+        {
+          path: GLib.build_filenamev([
             home,
             ".config",
             "github-copilot",
             "oauth.json",
           ]),
-          readToken_oauthJson,
-          true,
+          extract: readToken_oauthJson,
+          isJson: true,
+        },
+      ];
+
+      for (const source of sources) {
+        const token = await this._readFileToken(
+          source.path,
+          source.extract,
+          source.isJson,
         );
-        if (this._destroyed) return;
-        if (token) return this._fetchUsage(token);
+        if (!this._isRefreshCurrent(generation)) return null;
+        if (token) return token;
       }
 
-      // 6) Manual token from extension settings
-      {
-        const token = this._settings.get_string("github-token").trim();
-        if (token) return this._fetchUsage(token);
-      }
-
-      // Nothing found – show setup UI
-      this._showSetupState(
-        "GitHub Token Required",
-        "No credentials found. Open Settings to add your token.",
-      );
+      return null;
     }
 
     private _runSubprocessToken(
@@ -595,8 +648,39 @@ const CopilotUsageIndicator = GObject.registerClass(
 
     // ── API fetch ─────────────────────────────────────────────────────
 
-    private _fetchUsage(token: string): void {
-      const API_URL = "https://api.github.com/copilot_internal/user";
+    private _fetchUsage(token: string, generation: number): void {
+      if (!this._isRefreshCurrent(generation)) return;
+
+      const message = this._createApiMessage(token);
+
+      this._session.send_and_read_async(
+        message,
+        GLib.PRIORITY_DEFAULT,
+        null,
+        (sourceSession: Soup.Session | null, result: Gio.AsyncResult) => {
+          if (!sourceSession || !this._isRefreshCurrent(generation)) return;
+          try {
+            const bytes = sourceSession.send_and_read_finish(result);
+            if (!this._isRefreshCurrent(generation)) return;
+
+            const networkError = this._getResponseError(message, bytes);
+            if (networkError) {
+              networkError();
+              return;
+            }
+
+            const data = this._parseUsageResponse(bytes);
+            if (data) this._updateUsageDisplay(data);
+          } catch (e) {
+            if (!this._isRefreshCurrent(generation)) return;
+            const err = e as Error;
+            this._showNetworkError(err.message);
+          }
+        },
+      );
+    }
+
+    private _createApiMessage(token: string): Soup.Message {
       const message = Soup.Message.new("GET", API_URL);
       const h = message.request_headers;
       h.append("Authorization", `token ${token}`);
@@ -605,53 +689,44 @@ const CopilotUsageIndicator = GObject.registerClass(
       h.append("Editor-Plugin-Version", "copilot-chat/0.26.7");
       h.append("User-Agent", "GitHubCopilotChat/0.26.7");
       h.append("X-Github-Api-Version", "2025-04-01");
+      return message;
+    }
 
-      this._session.send_and_read_async(
-        message,
-        GLib.PRIORITY_DEFAULT,
-        null,
-        (sourceSession: Soup.Session | null, result: Gio.AsyncResult) => {
-          if (!sourceSession) return;
-          try {
-            const bytes = sourceSession.send_and_read_finish(result);
+    private _getResponseError(
+      message: Soup.Message,
+      bytes: GLib.Bytes,
+    ): (() => void) | null {
+      if (message.status_code === 401 || message.status_code === 403) {
+        return () =>
+          this._showSetupState(
+            "Token Invalid or Expired",
+            "The stored token was rejected. Update it in Settings.",
+          );
+      }
 
-            if (message.status_code === 401 || message.status_code === 403) {
-              this._showSetupState(
-                "Token Invalid or Expired",
-                "The stored token was rejected. Update it in Settings.",
-              );
-              return;
-            }
+      if (message.status_code !== 200) {
+        return () => this._showNetworkError(`HTTP ${message.status_code}`);
+      }
 
-            if (message.status_code !== 200) {
-              this._showNetworkError(`HTTP ${message.status_code}`);
-              return;
-            }
+      if (!bytes.get_data()) {
+        return () => this._showNetworkError("Empty response from API");
+      }
 
-            const raw = bytes.get_data();
-            if (!raw) {
-              this._showNetworkError("Empty response from API");
-              return;
-            }
+      return null;
+    }
 
-            const data = JSON.parse(
-              new TextDecoder("utf-8").decode(raw),
-            ) as CopilotUsageData;
-            this._updateUsageDisplay(data);
-          } catch (e) {
-            const err = e as Error;
-            console.error("Copilot Usage: fetch error:", err.message);
-            this._showNetworkError(err.message);
-          }
-        },
-      );
+    private _parseUsageResponse(bytes: GLib.Bytes): CopilotUsageData | null {
+      const raw = bytes.get_data();
+      if (!raw) return null;
+
+      return JSON.parse(
+        new TextDecoder("utf-8").decode(raw),
+      ) as CopilotUsageData;
     }
 
     // ── Display helpers ───────────────────────────────────────────────
 
     private _updateUsageDisplay(data: CopilotUsageData): void {
-      console.log("Copilot Usage: raw API response →", JSON.stringify(data));
-
       const plan = data.copilot_plan ?? data.copilotPlan ?? null;
       const snapshots = data.quota_snapshots ?? data.quotaSnapshots ?? null;
       const premium =
@@ -661,11 +736,6 @@ const CopilotUsageIndicator = GObject.registerClass(
       const chat = snapshots?.chat ?? null;
 
       if (!plan && !premium && !chat) {
-        console.warn(
-          "Copilot Usage: response has no plan/quota fields.",
-          "Full response:",
-          JSON.stringify(data),
-        );
         this._showSetupState(
           "Copilot Data Unavailable",
           "API returned no usage data. Your token may lack Copilot permissions.",
@@ -674,81 +744,80 @@ const CopilotUsageIndicator = GObject.registerClass(
       }
 
       this._setMenuState("usage");
-
-      // Plan badge
       this._planLabel.set_text(plan ? this._formatPlan(plan) : "");
-
-      // Decide chat visibility based on plan
       this._updateChatVisibility(plan);
 
-      const pctRemaining = (
-        snap: QuotaSnapshot | null | undefined,
-      ): number | null =>
-        snap?.percent_remaining ?? snap?.percentRemaining ?? null;
+      const premR = this._percentRemaining(premium);
+      const chatR = this._percentRemaining(chat);
 
-      // Premium Requests
-      const premR = pctRemaining(premium);
-      if (premR !== null) {
-        const used = 100 - premR;
-        this._updateBar(this._premiumResult.bar, used);
-        this._premiumResult.usedLabel.set_text(`${used.toFixed(1)}%`);
-        this._premiumResult.percentLabel.set_text(
-          `${premR.toFixed(1)}% remaining`,
-        );
-      } else {
-        this._updateBar(this._premiumResult.bar, 0);
-        this._premiumResult.usedLabel.set_text("unlimited");
-        this._premiumResult.percentLabel.set_text("");
+      this._updateUsageRow(this._premiumResult, premR);
+      this._updateUsageRow(this._chatResult, chatR);
+      this._updateWarningIndicator(premR);
+      this._updatedLabel.set_text(this._getUpdatedTimestamp());
+    }
+
+    private _percentRemaining(
+      snap: QuotaSnapshot | null | undefined,
+    ): number | null {
+      return snap?.percent_remaining ?? snap?.percentRemaining ?? null;
+    }
+
+    private _updateUsageRow(
+      row: UsageRowResult,
+      remaining: number | null,
+    ): void {
+      if (remaining !== null) {
+        const used = 100 - remaining;
+        this._updateBar(row.bar, used);
+        row.usedLabel.set_text(`${used.toFixed(1)}%`);
+        row.percentLabel.set_text(`${remaining.toFixed(1)}% remaining`);
+        return;
       }
 
-      // Chat (only rendered when plan is free, but update values always)
-      const chatR = pctRemaining(chat);
-      if (chatR !== null) {
-        const used = 100 - chatR;
-        this._updateBar(this._chatResult.bar, used);
-        this._chatResult.usedLabel.set_text(`${used.toFixed(1)}%`);
-        this._chatResult.percentLabel.set_text(
-          `${chatR.toFixed(1)}% remaining`,
-        );
-      } else {
-        this._updateBar(this._chatResult.bar, 0);
-        this._chatResult.usedLabel.set_text("unlimited");
-        this._chatResult.percentLabel.set_text("");
-      }
+      this._updateBar(row.bar, 0);
+      row.usedLabel.set_text("unlimited");
+      row.percentLabel.set_text("");
+    }
 
-      // Panel icon — use warning dot only when premium is nearly exhausted
-      if (premR !== null && premR <= 10) {
+    private _updateWarningIndicator(remaining: number | null): void {
+      this._warningDot.remove_style_class_name("dot-critical");
+      this._warningDot.remove_style_class_name("dot-high");
+
+      if (remaining !== null && remaining <= 10) {
         this._warningDot.visible = true;
         this._warningDot.add_style_class_name(
-          premR <= 0 ? "dot-critical" : "dot-high",
+          remaining <= 0 ? "dot-critical" : "dot-high",
         );
-      } else {
-        this._warningDot.visible = false;
-        this._warningDot.remove_style_class_name("dot-critical");
-        this._warningDot.remove_style_class_name("dot-high");
+        return;
       }
 
-      // Timestamp – HH:MM only
+      this._warningDot.visible = false;
+    }
+
+    private _getUpdatedTimestamp(): string {
       const now = new Date();
       const hh = now.getHours().toString().padStart(2, "0");
       const mm = now.getMinutes().toString().padStart(2, "0");
-      this._updatedLabel.set_text(`Updated ${hh}:${mm}`);
+      return `Updated ${hh}:${mm}`;
     }
 
     private _showSetupState(heading: string, body: string): void {
       this._setMenuState("setup");
       this._setupHeading.set_text(heading);
       this._setupBody.set_text(body);
-      this._warningDot.visible = true;
-      this._warningDot.remove_style_class_name("dot-critical");
-      this._warningDot.add_style_class_name("dot-high");
+      this._setWarningState("dot-high");
     }
 
     private _showNetworkError(detail: string): void {
       if (this._updatedLabel) this._updatedLabel.set_text(`Error: ${detail}`);
+      this._setWarningState("dot-high");
+    }
+
+    private _setWarningState(styleClass: "dot-high" | "dot-critical"): void {
       this._warningDot.visible = true;
       this._warningDot.remove_style_class_name("dot-critical");
-      this._warningDot.add_style_class_name("dot-high");
+      this._warningDot.remove_style_class_name("dot-high");
+      this._warningDot.add_style_class_name(styleClass);
     }
 
     private _formatPlan(raw: string): string {
@@ -758,20 +827,10 @@ const CopilotUsageIndicator = GObject.registerClass(
     // ── Progress bar ──────────────────────────────────────────────────
 
     private _updateBar(bar: St.Widget, pct: number): void {
-      // The bar width is calculated as a fraction of the track's allocated
-      // width. We defer to CSS min-width on the bg to determine the base size,
-      // and use a style property here so it scales correctly.
       const clampedPct = Math.min(100, Math.max(0, pct));
+      bar.set_style(`width: ${clampedPct}%;`);
 
-      // Write the fill percentage as a custom CSS-driven width via inline style.
-      // We use a fixed pixel base matching .copilot-progress-bg min-width (260px)
-      // minus the horizontal padding (8px each side) = 244px track width.
-      const TRACK_PX = 244;
-      bar.set_width(Math.round((clampedPct / 100) * TRACK_PX));
-
-      (
-        ["usage-low", "usage-medium", "usage-high", "usage-critical"] as const
-      ).forEach((c) => bar.remove_style_class_name(c));
+      PROGRESS_STYLE_CLASSES.forEach((c) => bar.remove_style_class_name(c));
 
       if (clampedPct >= 85) bar.add_style_class_name("usage-critical");
       else if (clampedPct >= 60) bar.add_style_class_name("usage-high");
@@ -784,11 +843,12 @@ const CopilotUsageIndicator = GObject.registerClass(
     private _startTimer(): void {
       this._stopTimer();
       const interval = this._settings.get_int("refresh-interval");
-      if (interval <= 0) return;
+      if (interval < 30) return;
       this._timerId = GLib.timeout_add_seconds(
         GLib.PRIORITY_DEFAULT,
         interval,
         () => {
+          if (this._destroyed) return GLib.SOURCE_REMOVE;
           this._refreshUsage();
           return GLib.SOURCE_CONTINUE;
         },
@@ -807,9 +867,19 @@ const CopilotUsageIndicator = GObject.registerClass(
     override destroy(): void {
       this._destroyed = true;
       this._stopTimer();
+      this._refreshGeneration++;
+
+      if (this._menuOpenChangedId !== null) {
+        this._popupMenu.disconnect(this._menuOpenChangedId);
+        this._menuOpenChangedId = null;
+      }
       if (this._settingsChangedId !== null) {
         this._settings.disconnect(this._settingsChangedId);
         this._settingsChangedId = null;
+      }
+      if (this._refreshIntervalChangedId !== null) {
+        this._settings.disconnect(this._refreshIntervalChangedId);
+        this._refreshIntervalChangedId = null;
       }
       if (this._session) {
         this._session.abort();
